@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Advanced Collage Editor</title>
+<style>
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: Arial;
+  overflow: hidden;
+  background: #111;
+}
+#topBar {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  background: #222;
+  color: white;
+  flex-wrap: wrap;
+}
+#grid {
+  position: relative;
+  width: 100vw;
+  height: calc(100vh - 120px);
+  transition: background 0.2s;
+}
+.contentImage {
+  position: absolute;
+  transform-origin: center;
+  cursor: grab;
+  object-fit: contain;
+}
+</style>
+</head>
+<body>
+
+<div id="topBar">
+  <button id="uploadBtn">Upload</button>
+  <button id="clearBtn">Delete All</button>
+  <label>Global Scale</label>
+  <input type="range" id="sizeSlider" min="0.5" max="2" step="0.01" value="1">
+  <label>Horizontal Spacing</label>
+  <input type="range" id="spacingSlider" min="-150" max="150" value="0">
+  <button id="fullscreenBtn">Fullscreen</button>
+  <button onclick="exportImage()">Export</button>
+</div>
+
+<div id="grid"></div>
+
+<script>
+let images = [];
+let spacingX = 0;
+let globalScale = 1;
+let fullscreenWindow = null;
+
+const grid = document.getElementById('grid');
+
+// ---------- Upload ----------
+document.getElementById('uploadBtn').onclick = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = 'image/*';
+  input.onchange = e => handleFiles(e.target.files);
+  input.click();
+};
+
+function handleFiles(files){
+  for(let file of files){
+    if(file.type.startsWith('image/')){
+      const reader = new FileReader();
+      reader.onload = e => {
+        images.push({
+          src: e.target.result,
+          xOffset: 0,
+          yOffset: 0,
+          scale: 1
+        });
+        render();
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+}
+
+// ---------- Drag & Drop ----------
+grid.addEventListener('dragover', e => {
+  e.preventDefault();
+  grid.style.background = "#333";
+});
+grid.addEventListener('dragleave', () => {
+  grid.style.background = "transparent";
+});
+grid.addEventListener('drop', e => {
+  e.preventDefault();
+  grid.style.background = "transparent";
+  handleFiles(e.dataTransfer.files);
+});
+
+// ---------- Delete All ----------
+document.getElementById('clearBtn').onclick = () => {
+  images = [];
+  render();
+  sendFullscreenUpdate(); // 🔥 FIX
+};
+
+// ---------- Grid ----------
+function getLayout(count, w, h){
+  const cols = Math.ceil(Math.sqrt(count || 1));
+  const rows = Math.ceil((count || 1) / cols);
+  return { cols, rows, cellW: w/cols, cellH: h/rows };
+}
+
+// ---------- Render ----------
+function render(){
+  grid.innerHTML = '';
+  const w = grid.clientWidth;
+  const h = grid.clientHeight;
+
+  const {cols, rows, cellW, cellH} = getLayout(images.length, w, h);
+
+  images.forEach((imgData, i)=>{
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+
+    const centerX = (col + 0.5) * cellW + (col - (cols-1)/2) * spacingX;
+    const centerY = (row + 0.5) * cellH;
+
+    const img = document.createElement('img');
+    img.src = imgData.src;
+    img.className = 'contentImage';
+
+    img.style.left = centerX + 'px';
+    img.style.top = centerY + 'px';
+    img.style.width = cellW + 'px';
+    img.style.height = cellH + 'px';
+
+    img.style.transform =
+      `translate(-50%,-50%) 
+       scale(${globalScale * imgData.scale}) 
+       translate(${imgData.xOffset}px, ${imgData.yOffset}px)`;
+
+    // Drag
+    let dragging = false;
+    let startX, startY;
+
+    img.onmousedown = e => {
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+    };
+
+    window.onmouseup = () => dragging = false;
+
+    window.onmousemove = e => {
+      if(!dragging) return;
+      imgData.xOffset += (e.clientX - startX) / globalScale;
+      imgData.yOffset += (e.clientY - startY) / globalScale;
+      startX = e.clientX;
+      startY = e.clientY;
+      render();
+    };
+
+    // Zoom
+    img.onwheel = e => {
+      e.preventDefault();
+      imgData.scale += e.deltaY * -0.001;
+      imgData.scale = Math.max(0.2, Math.min(3, imgData.scale));
+      render();
+    };
+
+    grid.appendChild(img);
+  });
+
+  sendFullscreenUpdate();
+}
+
+// ---------- Controls ----------
+document.getElementById('sizeSlider').oninput = e=>{
+  globalScale = parseFloat(e.target.value);
+  render();
+};
+document.getElementById('spacingSlider').oninput = e=>{
+  spacingX = parseInt(e.target.value);
+  render();
+};
+
+// ---------- Fullscreen ----------
+document.getElementById('fullscreenBtn').onclick = ()=>{
+  if(!fullscreenWindow || fullscreenWindow.closed){
+    fullscreenWindow = window.open('', 'fullscreen');
+    fullscreenWindow.document.write(`
+      <body style="margin:0;background:black;">
+        <div id="grid" style="width:100vw;height:100vh;position:relative;"></div>
+        <script>
+          window.addEventListener('message', function(e){
+            const data = e.data;
+            const grid = document.getElementById('grid');
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+
+            const cols = Math.ceil(Math.sqrt(data.images.length || 1));
+            const rows = Math.ceil((data.images.length || 1) / cols);
+            const cellW = w/cols;
+            const cellH = h/rows;
+
+            grid.innerHTML = '';
+
+            data.images.forEach((imgData, i)=>{
+              const col = i % cols;
+              const row = Math.floor(i / cols);
+
+              const x = (col + 0.5)*cellW + (col - (cols-1)/2)*data.spacingX;
+              const y = (row + 0.5)*cellH;
+
+              const img = document.createElement('img');
+              img.src = imgData.src;
+              img.style.position = 'absolute';
+              img.style.left = x+'px';
+              img.style.top = y+'px';
+              img.style.width = cellW+'px';
+              img.style.height = cellH+'px';
+              img.style.objectFit = 'contain';
+
+              img.style.transform =
+                'translate(-50%,-50%) scale(' + (data.globalScale * imgData.scale) + ') translate(' + imgData.xOffset + 'px,' + imgData.yOffset + 'px)';
+
+              grid.appendChild(img);
+            });
+          });
+        <\/script>
+      </body>
+    `);
+    fullscreenWindow.document.close();
+  }
+  sendFullscreenUpdate();
+};
+
+function sendFullscreenUpdate(){
+  if(fullscreenWindow && !fullscreenWindow.closed){
+    fullscreenWindow.postMessage({images, spacingX, globalScale}, '*');
+  }
+}
+
+// ---------- Export ----------
+function exportImage(){
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  const w = grid.clientWidth;
+  const h = grid.clientHeight;
+
+  canvas.width = w;
+  canvas.height = h;
+
+  const {cols, rows, cellW, cellH} = getLayout(images.length, w, h);
+
+  let loaded = 0;
+
+  images.forEach((imgData, i)=>{
+    const img = new Image();
+    img.src = imgData.src;
+
+    img.onload = ()=>{
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+
+      const x = (col + 0.5)*cellW + (col - (cols-1)/2)*spacingX;
+      const y = (row + 0.5)*cellH;
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(globalScale * imgData.scale, globalScale * imgData.scale);
+      ctx.drawImage(img, -cellW/2, -cellH/2, cellW, cellH);
+      ctx.restore();
+
+      loaded++;
+      if(loaded === images.length){
+        const link = document.createElement('a');
+        link.download = 'collage.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      }
+    };
+  });
+}
+
+window.onresize = render;
+
+</script>
+</body>
+</html>
