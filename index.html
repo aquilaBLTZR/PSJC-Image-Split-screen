@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Advanced Collage Editor</title>
+<title>PSJC Image Splitter</title>
+<!-- Favicon (you can replace this URL with your own .ico or .png file) -->
+<link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/commons/3/3f/Green_square.png">
 <style>
 html, body {
   margin: 0;
@@ -11,40 +13,117 @@ html, body {
   overflow: hidden;
   background: #111;
 }
+
+/* FULLSCREEN background container behind everything */
+#bgLayer {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-size: cover;
+  background-position: center;
+  z-index: 0;
+  transition: background 0.2s ease;
+}
+
 #topBar {
   display: flex;
+  align-items: center;
   gap: 10px;
   padding: 10px;
-  background: #222;
+  background: #0b3d2e;
   color: white;
   flex-wrap: wrap;
+  transition: top 0.3s ease;
+  position: relative;
+  z-index: 10;
 }
+
+#title {
+  font-weight: bold;
+  font-size: 18px;
+  margin-right: 20px;
+}
+
 #grid {
   position: relative;
   width: 100vw;
   height: calc(100vh - 120px);
   transition: background 0.2s;
+  z-index: 1;
 }
+
 .contentImage {
   position: absolute;
   transform-origin: center;
   cursor: grab;
   object-fit: contain;
 }
+
+button {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+}
+
+button:active {
+  transform: scale(1.05);
+}
+
+/* Small circular Show UI button */
+#showUIButton {
+  position: fixed;
+  top: 15px;
+  right: 15px;
+  display: none;
+  z-index: 20;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(11, 61, 46, 0.6);
+  color: white;
+  font-size: 20px;
+  text-align: center;
+  line-height: 36px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+}
+
+#showUIButton:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+  background: rgba(11,61,46,0.9);
+}
 </style>
 </head>
 <body>
 
+<!-- FULLSCREEN background -->
+<div id="bgLayer"></div>
+
 <div id="topBar">
-  <button id="uploadBtn">Upload</button>
+  <div id="title">PSJC Image Splitter</div>
+
+  <button id="uploadBtn">Upload Images</button>
+  <button id="bgBtn">Set Background</button>
   <button id="clearBtn">Delete All</button>
+  <button id="hideUIBtn">Hide UI</button>
+
   <label>Global Scale</label>
   <input type="range" id="sizeSlider" min="0.5" max="2" step="0.01" value="1">
+
   <label>Horizontal Spacing</label>
   <input type="range" id="spacingSlider" min="-150" max="150" value="0">
+
   <button id="fullscreenBtn">Fullscreen</button>
   <button onclick="exportImage()">Export</button>
 </div>
+
+<button id="showUIButton">▲</button>
 
 <div id="grid"></div>
 
@@ -53,10 +132,25 @@ let images = [];
 let spacingX = 0;
 let globalScale = 1;
 let fullscreenWindow = null;
+let backgroundImage = null;
 
 const grid = document.getElementById('grid');
+const topBar = document.getElementById('topBar');
+const showUIButton = document.getElementById('showUIButton');
+const bgLayer = document.getElementById('bgLayer');
 
-// ---------- Upload ----------
+// ---------- Toggle UI ----------
+document.getElementById('hideUIBtn').onclick = () => {
+  topBar.style.top = `-120px`;
+  showUIButton.style.display = 'block';
+};
+
+showUIButton.onclick = () => {
+  topBar.style.top = '0';
+  showUIButton.style.display = 'none';
+};
+
+// ---------- Upload Images ----------
 document.getElementById('uploadBtn').onclick = () => {
   const input = document.createElement('input');
   input.type = 'file';
@@ -71,12 +165,7 @@ function handleFiles(files){
     if(file.type.startsWith('image/')){
       const reader = new FileReader();
       reader.onload = e => {
-        images.push({
-          src: e.target.result,
-          xOffset: 0,
-          yOffset: 0,
-          scale: 1
-        });
+        images.push({ src: e.target.result, xOffset: 0, yOffset: 0, scale: 1 });
         render();
       };
       reader.readAsDataURL(file);
@@ -84,28 +173,35 @@ function handleFiles(files){
   }
 }
 
-// ---------- Drag & Drop ----------
-grid.addEventListener('dragover', e => {
-  e.preventDefault();
-  grid.style.background = "#333";
-});
-grid.addEventListener('dragleave', () => {
-  grid.style.background = "transparent";
-});
-grid.addEventListener('drop', e => {
-  e.preventDefault();
-  grid.style.background = "transparent";
-  handleFiles(e.dataTransfer.files);
-});
-
-// ---------- Delete All ----------
-document.getElementById('clearBtn').onclick = () => {
-  images = [];
-  render();
-  sendFullscreenUpdate(); // 🔥 FIX
+// ---------- Background Upload ----------
+document.getElementById('bgBtn').onclick = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if(file){
+      const reader = new FileReader();
+      reader.onload = ev => {
+        backgroundImage = ev.target.result;
+        bgLayer.style.backgroundImage = `url(${backgroundImage})`;
+        render();
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  input.click();
 };
 
-// ---------- Grid ----------
+// ---------- Drag & Drop ----------
+grid.addEventListener('dragover', e => { e.preventDefault(); grid.style.backgroundColor = "#333"; });
+grid.addEventListener('dragleave', () => { grid.style.backgroundColor = "transparent"; });
+grid.addEventListener('drop', e => { e.preventDefault(); grid.style.backgroundColor = "transparent"; handleFiles(e.dataTransfer.files); });
+
+// ---------- Delete All ----------
+document.getElementById('clearBtn').onclick = () => { images = []; render(); sendFullscreenUpdate(); };
+
+// ---------- Layout ----------
 function getLayout(count, w, h){
   const cols = Math.ceil(Math.sqrt(count || 1));
   const rows = Math.ceil((count || 1) / cols);
@@ -115,60 +211,42 @@ function getLayout(count, w, h){
 // ---------- Render ----------
 function render(){
   grid.innerHTML = '';
+
   const w = grid.clientWidth;
   const h = grid.clientHeight;
-
   const {cols, rows, cellW, cellH} = getLayout(images.length, w, h);
 
   images.forEach((imgData, i)=>{
     const col = i % cols;
     const row = Math.floor(i / cols);
 
-    const centerX = (col + 0.5) * cellW + (col - (cols-1)/2) * spacingX;
-    const centerY = (row + 0.5) * cellH;
+    const x = (col + 0.5)*cellW + (col - (cols-1)/2)*spacingX;
+    const y = (row + 0.5)*cellH;
 
     const img = document.createElement('img');
     img.src = imgData.src;
     img.className = 'contentImage';
-
-    img.style.left = centerX + 'px';
-    img.style.top = centerY + 'px';
+    img.style.left = x + 'px';
+    img.style.top = y + 'px';
     img.style.width = cellW + 'px';
     img.style.height = cellH + 'px';
+    img.style.transform = `translate(-50%,-50%) scale(${globalScale * imgData.scale}) translate(${imgData.xOffset}px, ${imgData.yOffset}px)`;
 
-    img.style.transform =
-      `translate(-50%,-50%) 
-       scale(${globalScale * imgData.scale}) 
-       translate(${imgData.xOffset}px, ${imgData.yOffset}px)`;
-
-    // Drag
     let dragging = false;
     let startX, startY;
 
-    img.onmousedown = e => {
-      dragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
-    };
-
+    img.onmousedown = e => { dragging = true; startX = e.clientX; startY = e.clientY; };
     window.onmouseup = () => dragging = false;
-
     window.onmousemove = e => {
       if(!dragging) return;
-      imgData.xOffset += (e.clientX - startX) / globalScale;
-      imgData.yOffset += (e.clientY - startY) / globalScale;
+      imgData.xOffset += (e.clientX - startX)/globalScale;
+      imgData.yOffset += (e.clientY - startY)/globalScale;
       startX = e.clientX;
       startY = e.clientY;
       render();
     };
 
-    // Zoom
-    img.onwheel = e => {
-      e.preventDefault();
-      imgData.scale += e.deltaY * -0.001;
-      imgData.scale = Math.max(0.2, Math.min(3, imgData.scale));
-      render();
-    };
+    img.onwheel = e => { e.preventDefault(); imgData.scale += e.deltaY*-0.001; imgData.scale = Math.max(0.2, Math.min(3,imgData.scale)); render(); };
 
     grid.appendChild(img);
   });
@@ -177,14 +255,8 @@ function render(){
 }
 
 // ---------- Controls ----------
-document.getElementById('sizeSlider').oninput = e=>{
-  globalScale = parseFloat(e.target.value);
-  render();
-};
-document.getElementById('spacingSlider').oninput = e=>{
-  spacingX = parseInt(e.target.value);
-  render();
-};
+document.getElementById('sizeSlider').oninput = e=>{ globalScale = parseFloat(e.target.value); render(); };
+document.getElementById('spacingSlider').oninput = e=>{ spacingX = parseInt(e.target.value); render(); };
 
 // ---------- Fullscreen ----------
 document.getElementById('fullscreenBtn').onclick = ()=>{
@@ -192,40 +264,32 @@ document.getElementById('fullscreenBtn').onclick = ()=>{
     fullscreenWindow = window.open('', 'fullscreen');
     fullscreenWindow.document.write(`
       <body style="margin:0;background:black;">
-        <div id="grid" style="width:100vw;height:100vh;position:relative;"></div>
+        <div id="grid" style="width:100vw;height:100vh;background-size:cover;background-position:center;"></div>
         <script>
           window.addEventListener('message', function(e){
             const data = e.data;
             const grid = document.getElementById('grid');
-            const w = window.innerWidth;
-            const h = window.innerHeight;
-
+            grid.style.backgroundImage = data.backgroundImage ? 'url('+data.backgroundImage+')' : 'none';
+            grid.style.backgroundSize = 'cover';
+            grid.style.backgroundPosition = 'center';
+            const w = window.innerWidth, h = window.innerHeight;
             const cols = Math.ceil(Math.sqrt(data.images.length || 1));
-            const rows = Math.ceil((data.images.length || 1) / cols);
-            const cellW = w/cols;
-            const cellH = h/rows;
-
-            grid.innerHTML = '';
-
-            data.images.forEach((imgData, i)=>{
-              const col = i % cols;
-              const row = Math.floor(i / cols);
-
-              const x = (col + 0.5)*cellW + (col - (cols-1)/2)*data.spacingX;
-              const y = (row + 0.5)*cellH;
-
-              const img = document.createElement('img');
-              img.src = imgData.src;
-              img.style.position = 'absolute';
-              img.style.left = x+'px';
-              img.style.top = y+'px';
-              img.style.width = cellW+'px';
-              img.style.height = cellH+'px';
-              img.style.objectFit = 'contain';
-
-              img.style.transform =
-                'translate(-50%,-50%) scale(' + (data.globalScale * imgData.scale) + ') translate(' + imgData.xOffset + 'px,' + imgData.yOffset + 'px)';
-
+            const rows = Math.ceil((data.images.length || 1)/cols);
+            const cellW = w/cols, cellH = h/rows;
+            grid.innerHTML='';
+            data.images.forEach((imgData,i)=>{
+              const col=i%cols, row=Math.floor(i/cols);
+              const x=(col+0.5)*cellW + (col-(cols-1)/2)*data.spacingX;
+              const y=(row+0.5)*cellH;
+              const img=document.createElement('img');
+              img.src=imgData.src;
+              img.style.position='absolute';
+              img.style.left=x+'px';
+              img.style.top=y+'px';
+              img.style.width=cellW+'px';
+              img.style.height=cellH+'px';
+              img.style.objectFit='contain';
+              img.style.transform='translate(-50%,-50%) scale('+ (data.globalScale*imgData.scale) +') translate('+imgData.xOffset+'px,'+imgData.yOffset+'px)';
               grid.appendChild(img);
             });
           });
@@ -239,55 +303,51 @@ document.getElementById('fullscreenBtn').onclick = ()=>{
 
 function sendFullscreenUpdate(){
   if(fullscreenWindow && !fullscreenWindow.closed){
-    fullscreenWindow.postMessage({images, spacingX, globalScale}, '*');
+    fullscreenWindow.postMessage({images, spacingX, globalScale, backgroundImage}, '*');
   }
 }
 
 // ---------- Export ----------
 function exportImage(){
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  const canvas=document.createElement('canvas');
+  const ctx=canvas.getContext('2d');
+  const w=grid.clientWidth, h=grid.clientHeight;
+  canvas.width=w; canvas.height=h;
 
-  const w = grid.clientWidth;
-  const h = grid.clientHeight;
+  if(backgroundImage){
+    const bg=new Image();
+    bg.src=backgroundImage;
+    bg.onload=()=>{ ctx.drawImage(bg,0,0,w,h); drawImages(); };
+  } else drawImages();
 
-  canvas.width = w;
-  canvas.height = h;
-
-  const {cols, rows, cellW, cellH} = getLayout(images.length, w, h);
-
-  let loaded = 0;
-
-  images.forEach((imgData, i)=>{
-    const img = new Image();
-    img.src = imgData.src;
-
-    img.onload = ()=>{
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-
-      const x = (col + 0.5)*cellW + (col - (cols-1)/2)*spacingX;
-      const y = (row + 0.5)*cellH;
-
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(globalScale * imgData.scale, globalScale * imgData.scale);
-      ctx.drawImage(img, -cellW/2, -cellH/2, cellW, cellH);
-      ctx.restore();
-
-      loaded++;
-      if(loaded === images.length){
-        const link = document.createElement('a');
-        link.download = 'collage.png';
-        link.href = canvas.toDataURL();
-        link.click();
-      }
-    };
-  });
+  function drawImages(){
+    const {cols, rows, cellW, cellH} = getLayout(images.length,w,h);
+    let loaded=0;
+    images.forEach((imgData,i)=>{
+      const img=new Image();
+      img.src=imgData.src;
+      img.onload=()=>{
+        const col=i%cols, row=Math.floor(i/cols);
+        const x=(col+0.5)*cellW + (col-(cols-1)/2)*spacingX;
+        const y=(row+0.5)*cellH;
+        ctx.save();
+        ctx.translate(x,y);
+        ctx.scale(globalScale*imgData.scale,globalScale*imgData.scale);
+        ctx.drawImage(img,-cellW/2,-cellH/2,cellW,cellH);
+        ctx.restore();
+        loaded++;
+        if(loaded===images.length){
+          const link=document.createElement('a');
+          link.download='collage.png';
+          link.href=canvas.toDataURL();
+          link.click();
+        }
+      };
+    });
+  }
 }
 
 window.onresize = render;
-
 </script>
 </body>
 </html>
